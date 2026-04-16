@@ -118,14 +118,23 @@ async function callApi<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const response = await fetch(`${resolved.baseUrl}${path}`, {
-    method,
-    headers: {
-      Authorization: authHeader(resolved.apiKey),
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const url = `${resolved.baseUrl}${path}`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers: {
+        Authorization: authHeader(resolved.apiKey),
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (error) {
+    // Network-layer failures (DNS, TCP, TLS) surface here as "fetch failed".
+    // Include the URL so misconfigured regions are diagnosable.
+    const cause = error instanceof Error ? error.message : String(error);
+    throw new Error(`Archil API ${method} ${url} network error: ${cause}`);
+  }
 
   type Envelope = { success?: boolean; data?: T; error?: string };
   let payload: Envelope | null = null;
@@ -138,7 +147,7 @@ async function callApi<T>(
   if (!response.ok || !payload || payload.success === false) {
     const message =
       (payload && payload.error) ||
-      `Archil API ${method} ${path} failed with status ${response.status}`;
+      `Archil API ${method} ${url} failed with status ${response.status}`;
     throw new Error(message);
   }
 
